@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>翼をデザインしてCFD体験</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--tx:#18222f;--mu:#64748b;--ac:#2563eb;--bd:#d9e1ea;--ok:#16a34a;--ng:#dc2626;--cv:#fbfdff}
+@media(prefers-color-scheme:dark){:root{--bg:#0f141b;--card:#18202a;--tx:#e8edf4;--mu:#93a3b8;--ac:#60a5fa;--bd:#2b3644;--ok:#4ade80;--ng:#f87171;--cv:#111821}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,"Hiragino Sans","Yu Gothic",sans-serif;line-height:1.5}
+header{padding:12px 20px;border-bottom:1px solid var(--bd);background:var(--card)}
+h1{font-size:1.2rem;margin:0}header p{margin:2px 0 0;color:var(--mu);font-size:.85rem}
+main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;padding:14px;max-width:1300px;margin:auto}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}
+h2{font-size:.95rem;margin:0 0 8px}
+canvas#cv{width:100%;height:auto;aspect-ratio:900/500;background:var(--cv);border-radius:8px;touch-action:none;display:block}
+.row{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:.9rem}
+.row label{width:76px;flex:none}.row input[type=range]{flex:1}.row b{width:64px;text-align:right;font-variant-numeric:tabular-nums}
+button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer}
+button.p{background:var(--ac);border-color:var(--ac);color:#fff}button:hover{filter:brightness(.95)}
+input[type=text]{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);flex:1;min-width:0}
+.res{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.res div{background:var(--bg);border-radius:8px;padding:6px}.res small{color:var(--mu);display:block;font-size:.72rem}.res span{font-size:1.25rem;font-weight:700;font-variant-numeric:tabular-nums}
+#ld{color:var(--ac)}button:disabled{opacity:.4;cursor:not-allowed}
+#msg{font-size:.82rem;color:var(--mu);min-height:1.3em;margin-top:6px}
+table{width:100%;border-collapse:collapse;font-size:.82rem}th,td{padding:4px;border-bottom:1px solid var(--bd);text-align:center}
+td.n{text-align:left;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tr.r:hover{background:var(--bg);cursor:pointer}
+.tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tools button{font-size:.78rem;padding:5px 8px}
+.legend{font-size:.78rem;color:var(--mu);margin-top:6px}
+</style></head><body>
+<header><h1>✈ 翼をデザインしてCFD体験</h1><p>●をドラッグして翼の形を変えよう。揚力と抗力の比 L/D が大きいほど「よく飛ぶ翼」です。</p></header>
+<main>
+<section>
+ <div class="card"><canvas id="cv" width="900" height="500"></canvas>
+  <div class="legend">青い線＝空気の流れ（流線）／青い短線＝吸い込む力（負圧）／赤い短線＝押す力（正圧）／緑の矢印＝揚力／オレンジの矢印＝抗力（見やすく拡大）</div></div>
+ <div class="card" style="margin-top:14px">
+  <h2>① 条件を決める</h2>
+  <div class="row"><label>迎え角</label><input type="range" id="al" min="-5" max="20" step="0.5" value="5"><b id="alv"></b></div>
+  <div class="row"><label>風の速さ</label><input type="range" id="vv" min="5" max="60" step="1" value="20"><b id="vvv"></b></div>
+  <div class="row"><button id="reset">NACA0012に戻す</button><span style="color:var(--mu);font-size:.8rem">翼弦長 0.3 m の翼を想定</span></div>
+  <div class="row"><button class="p" id="go" style="flex:1;font-size:1.05rem;padding:10px">▶ 解析開始</button></div>
+  <div id="pb" style="height:8px;background:var(--bg);border-radius:4px;overflow:hidden;visibility:hidden"><div id="pf" style="height:100%;width:0;background:var(--ac)"></div></div>
+ </div>
+</section>
+<aside style="display:flex;flex-direction:column;gap:14px">
+ <div class="card"><h2>② 結果</h2>
+  <div class="res"><div><small>揚力係数 Cl</small><span id="cl">-</span></div><div><small>抗力係数 Cd</small><span id="cd">-</span></div><div><small>L/D</small><span id="ld">-</span></div></div>
+  <div id="msg"></div></div>
+ <div class="card"><h2>③ ランキングに登録（解析後）</h2>
+  <div class="row"><input type="text" id="nm" maxlength="20" placeholder="ニックネーム"><button class="p" id="save" disabled>登録</button></div></div>
+ <div class="card"><h2>🏆 L/D ランキング</h2>
+  <table><thead><tr><th>順</th><th>形</th><th>名前</th><th>L/D</th><th>α/風</th><th></th></tr></thead><tbody id="rk"></tbody></table>
+  <div class="tools"><button id="ex">書き出し</button><button id="im">読み込み</button><button id="clr">全消去</button><input type="file" id="fi" accept=".json" hidden></div>
+  <div class="legend">行をクリックすると、その翼と条件を呼び出せます。</div></div>
+</aside></main>
+<script>
+//CORE_START
+const XS=[.1,.35,.7],K=40;
+function spl(X,Y){const n=X.length,h=[],m=new Array(n).fill(0),a=[],b=[],c=[],d=[];
+ for(let i=0;i<n-1;i++)h[i]=X[i+1]-X[i];
+ for(let i=1;i<n-1;i++){a[i]=h[i-1];b[i]=2*(h[i-1]+h[i]);c[i]=h[i];d[i]=6*((Y[i+1]-Y[i])/h[i]-(Y[i]-Y[i-1])/h[i-1]);}
+ for(let i=2;i<n-1;i++){const w=a[i]/b[i-1];b[i]-=w*c[i-1];d[i]-=w*d[i-1];}
+ for(let i=n-2;i>=1;i--)m[i]=(d[i]-c[i]*m[i+1])/b[i];
+ return s=>{let i=0;while(i<n-2&&s>X[i+1])i++;const hh=h[i],A=(X[i+1]-s)/hh,B=(s-X[i])/hh;
+  return A*Y[i]+B*Y[i+1]+((A**3-A)*m[i]+(B**3-B)*m[i+1])*hh*hh/6;};}
+const t12=x=>.6*(.2969*Math.sqrt(x)-.126*x-.3516*x*x+.2843*x**3-.1036*x**4);
+const naca=()=>({u:XS.map(t12),l:XS.map(x=>-t12(x))});
+function airfoil(sh){const S=[0,...XS.map(Math.sqrt),1],fu=spl(S,[0,...sh.u,0]),fl=spl(S,[0,...sh.l,0]),P=[];let tm=0;
+ for(let i=0;i<=K;i++){const x=(1-Math.cos(Math.PI*(1-i/K)))/2,s=Math.sqrt(x);P.push([x,fl(s)]);tm=Math.max(tm,fu(s)-fl(s));}
+ for(let i=1;i<=K;i++){const x=(1-Math.cos(Math.PI*i/K))/2;P.push([x,fu(Math.sqrt(x))]);}
+ return{P,tm};}
+function ind(p,X,Y){const dx=X-p.x,dy=Y-p.y,xl=dx*p.tx+dy*p.ty,yl=dx*p.nx+dy*p.ny,l=p.l;
+ const u=-(Math.atan2(yl,xl-l)-Math.atan2(yl,xl))/(2*Math.PI);
+ const v=Math.log((xl*xl+yl*yl+1e-12)/((xl-l)*(xl-l)+yl*yl+1e-12))/(4*Math.PI);
+ return[u*p.tx+v*p.nx,u*p.ty+v*p.ny];}
+function gauss(A,N){for(let c=0;c<N;c++){let m=c;for(let r=c+1;r<N;r++)if(Math.abs(A[r][c])>Math.abs(A[m][c]))m=r;
+ [A[c],A[m]]=[A[m],A[c]];for(let r=c+1;r<N;r++){const f=A[r][c]/A[c][c];if(f)for(let k=c;k<=N;k++)A[r][k]-=f*A[c][k];}}
+ const g=new Float64Array(N);for(let r=N-1;r>=0;r--){let s=A[r][N];for(let k=r+1;k<N;k++)s-=A[r][k]*g[k];g[r]=s/A[r][r];}return g;}
+function analyze(sh,ad,V){const{P,tm}=airfoil(sh),N=P.length-1,pan=[],a=ad*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a);
+ for(let i=0;i<N;i++){const[x1,y1]=P[i],[x2,y2]=P[i+1],l=Math.hypot(x2-x1,y2-y1),tx=(x2-x1)/l,ty=(y2-y1)/l;
+  pan.push({x:x1,y:y1,tx,ty,nx:-ty,ny:tx,l,cx:(x1+x2)/2,cy:(y1+y2)/2});}
+ const A=Array.from({length:N},()=>new Float64Array(N+1));
+ for(let i=0;i<N;i++){const p=pan[i];for(let j=0;j<N;j++){if(i==j){A[i][j]=.5;continue;}const w=ind(pan[j],p.cx,p.cy);A[i][j]=w[0]*p.tx+w[1]*p.ty;}
+  A[i][N]=-(ca*p.tx+sa*p.ty);}
+ const D=Math.floor(N/4);A[D].fill(0);A[D][0]=1;A[D][N-1]=1;
+ const g=gauss(A,N);let G=0;for(let j=0;j<N;j++)G+=g[j]*pan[j].l;
+ const clI=-2*G,cp=Array.from(g,x=>1-x*x),cpmin=Math.min(...cp);
+ const Re=V*0.3/1.5e-5,cf=.074/Re**.2,cd0=2*cf*(1+2*tm+60*tm**4);
+ const thr=6+.8*(Math.log10(Re)-5.5),f=Math.min(1,Math.max(0,(-cpmin-thr)/4));
+ const cl=clI*(1-.4*f),cd=cd0+.3*f*f+.02*f;
+ return{P,pan,g,cp,cl,cd,ld:cl/cd,Re,f,a,tm};}
+//CORE_END
+const $=id=>document.getElementById(id),cv=$('cv'),cx=cv.getContext('2d');
+let sh=naca(),al=5,V=20,R,drag=null,hover=null,done=false,busy=false;
+const AR=()=>al*Math.PI/180;
+const W=900,H=500,SC=Math.min(W/2.1,H/1.15);
+const rot=(x,y)=>{const c=Math.cos(AR()),s=Math.sin(AR());return[.25+(x-.25)*c+y*s,-(x-.25)*s+y*c];};
+const inv=(x,y)=>{const c=Math.cos(AR()),s=Math.sin(AR());return[.25+(x-.25)*c-y*s,(x-.25)*s+y*c];};
+const scr=(x,y)=>[W/2+(x-.5)*SC,H/2-y*SC];
+const toScr=(x,y)=>{const r=rot(x,y);return scr(r[0],r[1]);};
+function inside(P,x,y){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++)
+ if((P[i][1]>y)!=(P[j][1]>y)&&x<(P[j][0]-P[i][0])*(y-P[i][1])/(P[j][1]-P[i][1])+P[i][0])c=!c;return c;}
+function vel(X,Y){let u=Math.cos(R.a),v=Math.sin(R.a);for(let j=0;j<R.pan.length;j++){const w=ind(R.pan[j],X,Y);u+=R.g[j]*w[0];v+=R.g[j]*w[1];}return[u,v];}
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function arrow(x1,y1,x2,y2,col){cx.strokeStyle=cx.fillStyle=col;cx.lineWidth=3;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke();
+ const t=Math.atan2(y2-y1,x2-x1);cx.beginPath();cx.moveTo(x2,y2);cx.lineTo(x2-10*Math.cos(t-.4),y2-10*Math.sin(t-.4));cx.lineTo(x2-10*Math.cos(t+.4),y2-10*Math.sin(t+.4));cx.fill();}
+function draw(){cx.clearRect(0,0,W,H);const ac=css('--ac'),tx=css('--tx'),mu=css('--mu');
+ const PP=airfoil(sh).P;
+ if(done){
+ // 流線
+ cx.lineWidth=1.4;cx.strokeStyle=ac;cx.globalAlpha=.55;
+ for(let y0=-.56;y0<=.56;y0+=.05){let[x,y]=inv(-.45,y0);cx.beginPath();let first=true;
+  for(let n=0;n<130;n++){const r=rot(x,y),s=scr(r[0],r[1]);if(first){cx.moveTo(s[0],s[1]);first=false}else cx.lineTo(s[0],s[1]);
+   if(r[0]>1.5||Math.abs(r[1])>.7||inside(R.P,x,y))break;
+   const h=.02;let[u,v]=vel(x,y),m=Math.hypot(u,v)||1;const[u2,v2]=vel(x+u/m*h/2,y+v/m*h/2),m2=Math.hypot(u2,v2)||1;x+=u2/m2*h;y+=v2/m2*h;}
+  cx.stroke();}
+ cx.globalAlpha=1;
+ }
+ // 翼
+ cx.beginPath();PP.forEach((p,i)=>{const s=toScr(p[0],p[1]);i?cx.lineTo(s[0],s[1]):cx.moveTo(s[0],s[1]);});cx.closePath();
+ cx.fillStyle=mu;cx.globalAlpha=.55;cx.fill();cx.globalAlpha=1;cx.strokeStyle=tx;cx.lineWidth=2;cx.stroke();
+ if(done){
+ // 圧力
+ cx.lineWidth=2;R.pan.forEach((p,i)=>{if(i%2)return;const c=R.cp[i],L=Math.min(.25,.03*Math.abs(c)),d=c<0?1:-1;
+  const a=toScr(p.cx,p.cy),b=toScr(p.cx+p.nx*L*d,p.cy+p.ny*L*d);cx.strokeStyle=c<0?'#3b82f6':'#ef4444';cx.beginPath();cx.moveTo(a[0],a[1]);cx.lineTo(b[0],b[1]);cx.stroke();});
+ // 力の矢印
+ const c4=toScr(.25,0);arrow(c4[0],c4[1],c4[0],c4[1]-Math.max(-110,Math.min(110,R.cl*70)),css('--ok'));
+ arrow(c4[0],c4[1],c4[0]+Math.min(160,R.cd*2500),c4[1],'#f59e0b');
+ }
+ // 風
+ arrow(14,H/2,64,H/2,mu);cx.fillStyle=mu;cx.font='14px sans-serif';cx.fillText('風 '+V+' m/s',10,H/2-12);
+ // 制御点
+ const pts=ctl();pts.forEach((q,i)=>{const s=toScr(q[0],q[1]);cx.beginPath();cx.arc(s[0],s[1],i===(drag??hover)?11:8,0,7);
+  cx.fillStyle='#f97316';cx.fill();cx.lineWidth=2;cx.strokeStyle='#fff';cx.stroke();});}
+const ctl=()=>[...XS.map((x,i)=>[x,sh.u[i],'u',i]),...XS.map((x,i)=>[x,sh.l[i],'l',i])];
+function clearRes(){['cl','cd','ld'].forEach(i=>$(i).textContent='—');$('save').disabled=true;
+ $('msg').textContent='形と条件が決まったら「▶ 解析開始」を押してください。';}
+function showRes(){$('cl').textContent=R.cl.toFixed(2);$('cd').textContent=R.cd.toFixed(4);$('ld').textContent=R.ld.toFixed(1);
+ $('msg').textContent=R.f>.05?'⚠ 流れがはがれ始めています（失速）。迎え角を小さくしてみよう。':'Re = '+Math.round(R.Re).toLocaleString()+'　（流れは翼に沿っています）';}
+function run(){if(busy)return;done=false;$('alv').textContent=al+'°';$('vvv').textContent=V+' m/s';clearRes();draw();}
+function start(){if(busy)return;busy=true;done=false;clearRes();draw();$('msg').textContent='計算中…';
+ const pb=$('pb'),pf=$('pf'),go=$('go');go.disabled=$('al').disabled=$('vv').disabled=true;pb.style.visibility='visible';pf.style.width='0';
+ const t0=performance.now(),D=1500;
+ (function step(t){const p=Math.min(1,(t-t0)/D);pf.style.width=p*100+'%';
+  if(p<1)return requestAnimationFrame(step);
+  R=analyze(sh,al,V);done=true;busy=false;go.disabled=$('al').disabled=$('vv').disabled=false;pb.style.visibility='hidden';
+  draw();showRes();$('save').disabled=false;})(t0);}
+$('go').onclick=start;
+// マウス操作
+function pos(e){const r=cv.getBoundingClientRect(),px=(e.clientX-r.left)*W/r.width,py=(e.clientY-r.top)*H/r.height;return[px,py];}
+function pick(px,py){let b=null,bd=24*24*(W/cv.getBoundingClientRect().width)**2/ (W/cv.getBoundingClientRect().width)**2;
+ ctl().forEach((q,i)=>{const s=toScr(q[0],q[1]),d=(s[0]-px)**2+(s[1]-py)**2;if(d<bd){bd=d;b=i;}});return b;}
+cv.addEventListener('pointerdown',e=>{if(busy)return;const[px,py]=pos(e);drag=pick(px,py);if(drag!==null){cv.setPointerCapture(e.pointerId);}});
+cv.addEventListener('pointermove',e=>{const[px,py]=pos(e);
+ if(drag!==null){const q=ctl()[drag],b=inv((px-W/2)/SC+.5,(H/2-py)/SC),y=b[1],i=q[3];
+  if(q[2]=='u')sh.u[i]=Math.max(sh.l[i]+.012,Math.min(.28,y));else sh.l[i]=Math.min(sh.u[i]-.012,Math.max(-.2,y));run();}
+ else{const h=pick(px,py);if(h!==hover){hover=h;cv.style.cursor=h!==null?'grab':'default';draw();}}});
+['pointerup','pointercancel'].forEach(t=>cv.addEventListener(t,()=>{drag=null;draw();}));
+$('al').oninput=e=>{if(busy)return e.preventDefault();al=+e.target.value;run();};$('vv').oninput=e=>{if(busy)return e.preventDefault();V=+e.target.value;run();};
+$('reset').onclick=()=>{if(busy)return;sh=naca();run();};
+// ランキング
+const KEY='cfdRank1';let DB=[];
+try{DB=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){}
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){$('msg').textContent='この環境では保存できません（書き出しを使ってください）'}};
+try{$('nm').value=localStorage.getItem('cfdName')||''}catch(e){}
+function board(){const tb=$('rk');tb.innerHTML='';DB.sort((a,b)=>b.ld-a.ld);
+ DB.slice(0,30).forEach((d,i)=>{const tr=document.createElement('tr');tr.className='r';
+  const cell=(t,c)=>{const td=document.createElement('td');td.textContent=t;if(c)td.className=c;tr.appendChild(td);return td;};
+  cell(['🥇','🥈','🥉'][i]||i+1);const td=document.createElement('td'),c=document.createElement('canvas');c.width=84;c.height=30;td.appendChild(c);tr.appendChild(td);
+  const g=c.getContext('2d'),{P}=airfoil(d.shape);g.fillStyle=css('--tx');g.beginPath();P.forEach((p,k)=>k?g.lineTo(4+p[0]*76,15-p[1]*76):g.moveTo(4+p[0]*76,15-p[1]*76));g.fill();
+  cell(d.name,'n');cell(d.ld.toFixed(1));cell(d.al+'°/'+d.v);
+  const x=cell('✕');x.onclick=e=>{e.stopPropagation();if(confirm(d.name+' の記録を削除しますか？')){DB=DB.filter(z=>z!==d);persist();board();}};
+  tr.onclick=()=>{if(busy)return;sh=JSON.parse(JSON.stringify(d.shape));al=d.al;V=d.v;$('al').value=al;$('vv').value=V;run();};tb.appendChild(tr);});}
+$('save').onclick=()=>{if(!done)return;const n=$('nm').value.trim();if(!n){$('msg').textContent='ニックネームを入力してください';$('nm').focus();return;}
+ try{localStorage.setItem('cfdName',n)}catch(e){}
+ DB.push({id:Date.now()+'-'+Math.random().toString(36).slice(2,6),name:n,ts:new Date().toISOString(),shape:JSON.parse(JSON.stringify(sh)),al,v:V,cl:R.cl,cd:R.cd,ld:R.ld});
+ persist();board();$('msg').textContent='登録しました！ L/D = '+R.ld.toFixed(1);};
+$('ex').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(DB,null,1)],{type:'application/json'}));a.download='cfd-ranking.json';a.click();};
+$('im').onclick=()=>$('fi').click();
+$('fi').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const arr=JSON.parse(r.result),ids=new Set(DB.map(d=>d.id));
+ arr.forEach(d=>{if(d&&d.shape&&isFinite(d.ld)&&!ids.has(d.id))DB.push(d);});persist();board();}catch(x){alert('読み込めませんでした');}};r.readAsText(f);e.target.value='';};
+$('clr').onclick=()=>{if(confirm('ランキングを全て消去します。先に「書き出し」をしましたか？')){DB=[];persist();board();}};
+run();board();
+</script></body></html>
